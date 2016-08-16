@@ -1,0 +1,374 @@
+<nowiki>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.0.0/jquery.min.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.3.3/backbone-min.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/urljs/1.2.0/url.min.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.0.5/handlebars.min.js"></script>
+<script type="text/javascript" src="https://code.highcharts.com/highcharts.js"></script>
+
+<!-- Page body -->
+<div id="client-analysis-app">
+	<label>Select server : </label>
+	<select id="server-selector"></select>
+	<label>Select Client : </label>
+	<select id="client-selector"></select>
+</div>
+<div id="container"></div>
+ 
+<!-- CSS -->
+<style>
+select {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  font-size: 16px;
+  margin: 0;
+  outline: 0;
+  padding: 10px;
+  width: 50%;
+  background-color: #e8eeef;
+  color: #8a97a0;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.03) inset;
+  margin-bottom: 30px;
+  height: auto;
+  border-radius: 2px;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+}
+.container {
+  min-width: 310px;
+  height: 400px;
+  margin: 0 auto;
+}
+</style>
+
+<!-- Templates -->
+<script type="text/template" id="server-item-tmpl">
+  {{NAME}}
+</script>
+<script type="text/template" id="client-item-tmpl">
+  {{NAME}}
+</script>
+
+<script type="text/javascript">
+  // from the backbone primer,
+  // https://github.com/jashkenas/backbone/wiki/Backbone%2C-The-Primer
+
+  var app = (function () {
+  
+      
+    var apiNodeMap = {
+      112043: 112042, // prod
+    }
+
+    var thisID = Url.queryString("ID");
+    var apiNodeID = apiNodeMap[thisID];
+    var config = {
+      customApiLocation: '/wiki/node.esp?ID=' + apiNodeID + '&resource=',
+    };
+
+	var Urls = {
+      servers: function () {
+        return config.customApiLocation + 'servers';
+      },
+	  clients: function (server) {
+        return config.customApiLocation + 'clients' + '/' + server;
+      },
+	  successrate: function (client) {
+        return config.customApiLocation + 'successrate' + '/' + client;
+      },
+	}
+
+	var ServerModel = Backbone.Model.extend({
+	      idAttribute: "ID",
+	});
+ 
+    var ServerCollection = Backbone.Collection.extend({
+      model: ServerModel,
+      url: Urls.servers,
+      comparator: 'ID',
+      parse: function(response) {
+        return response.data;
+      },
+    });
+  
+  
+     var ServerView = Backbone.View.extend({
+      tagName: "option",
+      template: Handlebars.compile($('#server-item-tmpl').html()),
+      attributes: function() {
+        return {
+          value: this.model.get('NAME'),
+        }
+      },
+      events: {
+        'server-selected': 'onServerSelected',
+      },
+
+      render: function () {
+        var html = this.template(this.model.toJSON());
+        this.$el.html(html);
+        return this;
+      },
+
+      onServerSelected: function() {
+        console.log("ServerView:onServerSelected", this.model);
+		Backbone.trigger('server:selected', this.model);
+      },
+    });
+	
+	
+	var ServerListView = Backbone.View.extend({
+      el: '#server-selector',
+
+      events: {
+        'change': 'onServerChanged',
+      },
+
+      initialize: function() {
+	  console.log("ServerListView:intializing");
+        this.listenTo(this.collection, 'sync', this.render);
+      },
+
+      render: function(args) {
+        var $select = this.$el.empty();
+
+        this.collection.each(function (model) {
+          var item = new ServerView({model: model});
+          $select.append(item.render().$el);
+        }, this);
+
+        return this;
+      },
+
+      onServerChanged: function(e) {
+        console.log("ServerListView:onServerChanged ", e.target.value);
+
+        // let the child DOM element know it's been selected
+        var $selected = this.$("option:selected");
+        $selected.trigger('server-selected');
+      }
+    });
+	
+	
+	var ClientModel = Backbone.Model.extend({
+	      idAttribute: "ID",
+	});
+ 
+    var ClientCollection = Backbone.Collection.extend({
+      model: ClientModel,
+      comparator: 'ID',
+      parse: function(response) {
+        return response.data;
+      },
+    });
+  
+  
+     var ClientView = Backbone.View.extend({
+      tagName: "option",
+      template: Handlebars.compile($('#client-item-tmpl').html()),
+      attributes: function() {
+        return {
+          value: this.model.get('NAME'),
+        }
+      },
+      events: {
+        'client-selected': 'onClientSelected',
+      },
+
+      render: function () {
+        var html = this.template(this.model.toJSON());
+        this.$el.html(html);
+        return this;
+      },
+
+      onClientSelected: function() {
+        console.log("ClientView:onClientSelected", this.model);
+		Backbone.trigger('clientName:selected', this.model);
+      },
+    });
+	
+	
+	var ClientListView = Backbone.View.extend({
+      el: '#client-selector',
+
+      events: {
+        'change': 'onClientChanged',
+      },
+
+      initialize: function() {
+		console.log("ClientListView:intializing");
+        this.listenTo(this.collection, 'sync', this.render);
+		this.listenTo(this.collection, 'reset', this.render);
+        this.listenTo(Backbone, 'server:selected', this.onServerChanged);
+      },
+
+      render: function(args) {
+        var $select = this.$el.empty();
+
+        this.collection.each(function (model) {
+          var item = new ClientView({model: model});
+          $select.append(item.render().$el);
+        }, this);
+
+        return this;
+      },
+
+      onClientChanged: function(e) {
+        console.log("ClientListView:onClientChanged ", e.target.value);
+
+        // let the child DOM element know it's been selected
+        var $selected = this.$("option:selected");
+        $selected.trigger('client-selected');
+      },
+	  
+	  onServerChanged: function(server) {
+        console.log("ClientListView:onServerChanged ", this.collection);
+		this.collection.fetch({ url: Urls.clients(server.get('NAME'))});
+		this.collection.reset();
+      }
+    });
+
+	var ClientStatsModel = Backbone.Model.extend({
+      idAttribute: "ID",
+	});
+
+    var ClientStatsCollection = Backbone.Collection.extend({
+        model: ClientStatsModel,
+        comparator: 'ID',
+        parse: function(response) {
+         return response.data;
+       },
+	   
+    });
+
+    var ClientStatsView = Backbone.View.extend({
+        el: '#container',
+        initialize: function (options) {
+			console.log("intializing view...");
+			this.listenTo(this.collection, "reset", this.render);
+			this.listenTo(Backbone, 'clientName:selected', this.onClientChanged);
+        },
+
+		
+		onClientChanged: function (client) {
+			this.collection.fetch({ 
+				url: Urls.successrate(client.get('NAME')),
+				success: function() {
+					console.log("fetching completed...");
+					
+				},
+				error: function() {
+				  console.log("Failed to fetch!");
+				},
+				reset: true,
+			});
+			
+		},
+		
+		render: function () {
+			console.log("ClientStatsView:onClientChanged:collection", this.collection);
+			var client = this.collection.at(0).get("CLIENTACRONYM");
+			var days = this.collection.pluck("DATE");
+			var date = this.collection.pluck("ID");
+			var duration = this.collection.pluck("DURATION");
+			console.log("ClientStatsView:onClientChanged:date", date);
+			var monthly = this.collection.findWhere({BATCHTYPE: "Monthly"}).get('DATE');
+			console.log("ClientStatsView:onClientChanged:monthly", monthly);
+			this.$el.highcharts({
+                title: {
+                    text: client,
+                    x: -20//center
+                },
+                subtitle: {
+                    text: 'Last 30 days performance',
+                    x: -20
+                },
+
+                xAxis: {
+                    categories: days, 
+					labels: {
+						formatter: function () {
+							if ( monthly === this.value) {
+								return '<span style="color:red;">' + this.value + '</span>';
+							} else {
+								return this.value;
+							}
+						}
+					}
+                },
+                 yAxis: {
+                    title: {
+                        text: 'Hours'
+                    },
+					type: 'datetime', //y-axis will be in milliseconds
+					dateTimeLabelFormats: { //force all formats to be hour:minute:second
+						second: '%H:%M:%S',
+						minute: '%H:%M:%S',
+						hour: '%H:%M:%S',
+						day: '%H:%M:%S',
+						week: '%H:%M:%S',
+						month: '%H:%M:%S',
+						year: '%H:%M:%S'
+					},
+                    plotLines: [{
+                        value: 0,
+                        width: 1,
+                        color: '#808080'
+                    }]
+                }, 
+                tooltip: {
+                    valueSuffix: ' seconds'
+                },
+               legend: {
+                    layout: 'vertical',
+                    align: 'right',
+                    verticalAlign: 'middle',
+                    borderWidth: 0
+					//floating: true      
+                }, 
+				 plotOptions: {
+					series: {
+						allowPointSelect: true
+					}
+				},
+                series: [{
+					name: 'Duration',
+					data: duration,
+				}],
+            });
+        }
+    });
+
+
+
+
+	function init() {
+      console.log("initializing...");
+
+	    
+      var serverList = new ServerCollection();
+      var serverView = new ServerListView({collection: serverList});
+      serverList.fetch();
+
+	  var clientList = new ClientCollection();
+	  var clientView = new ClientListView({collection: clientList});
+
+
+	 	var clientStatsList = new ClientStatsCollection();
+		var clientStatsView = new ClientStatsView({collection: clientStatsList});
+	   clientList.fetch();
+
+	}
+	
+    return {
+      init: init,
+    };
+  })();
+  
+  $(document).ready(function() {
+    app.init();
+  });
+</script>
+</nowiki>
